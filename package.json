@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node src/index.js",
-    "simulate": "node src/simulator/uplinkSimulator.js"
+    "simulate": "node src/simulator/uplinkSimulator_v2.js"
   },
   "keywords": [],
   "author": "",
