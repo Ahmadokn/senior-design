@@ -1,16 +1,24 @@
 export const POLL_MS = 5000;
+export const GRID_SNAP = 0.5;
 
 export const state = {
-    ROOM: { w: 0, h: 0 },
+    ROOM: { polygon: [] },
     BEACON_POS: [],
     LIVE_BEACONS: [],
     positions: {},
     selectedEui: null,
+    selectedBeaconMac: null,
     pollStart: Date.now(),
-
-    // Keeps unsaved modal values so refreshes do not wipe the form
     beaconDraft: {},
-    lastLiveBeaconSignature: ""
+    lastLiveBeaconSignature: "",
+
+    editor: {
+        mode: "view",
+        roomDraftPoints: [],
+        isPanning: false,
+        panMoved: false,
+        draggingBeaconMac: null
+    }
 };
 
 export const camera = {
@@ -19,7 +27,6 @@ export const camera = {
     zoom: 38,
     ZOOM_MIN: 4,
     ZOOM_MAX: 160,
-    isDragging: false,
     dragStart: null,
     camAtDrag: null
 };

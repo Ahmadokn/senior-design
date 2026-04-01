@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TRACKER GRID // SDP v3</title>
+    <title>TRACKER GRID // SDP v5</title>
     <link rel="stylesheet" href="/css/dashboard.css">
 </head>
 
@@ -24,7 +24,7 @@
                     style="color:var(--accent);margin-left:4px">—</span></div>
             <div class="status-item"><span id="last-update" style="color:var(--dim)">—</span></div>
             <div class="room-badge" id="room-badge" style="display:none">ROOM <span id="room-dims-label">—</span></div>
-            <button class="hdr-btn" onclick="openSetupModal()">CONFIGURE ROOM</button>
+            <button class="hdr-btn" onclick="openSetupModal()">EDIT SPACE</button>
         </div>
     </header>
 
@@ -34,6 +34,11 @@
             <div id="tracker-list">
                 <div class="no-trackers">Waiting for<br>position data...</div>
             </div>
+
+            <div class="sidebar-title sidebar-subtitle">LIVE BEACONS</div>
+            <div id="live-beacon-sidebar">
+                <div class="no-trackers">Waiting for<br>live beacon data...</div>
+            </div>
         </aside>
 
         <div class="canvas-wrap">
@@ -42,62 +47,78 @@
             <div class="corner bl"></div>
             <div class="corner br"></div>
             <div class="scanline"></div>
+
+            <div class="canvas-toolbar">
+                <button class="tool-btn" id="tool-view" onclick="setEditorMode('view')">VIEW</button>
+                <button class="tool-btn" id="tool-draw-room" onclick="setEditorMode('drawRoom')">DRAW ROOM</button>
+                <button class="tool-btn" id="tool-edit-beacons" onclick="setEditorMode('editBeacons')">PLACE
+                    BEACONS</button>
+                <button class="tool-btn" onclick="finishRoomPolygon()">FINISH ROOM</button>
+                <button class="tool-btn danger" onclick="clearRoomPolygon()">CLEAR ROOM</button>
+                <div class="editor-mode-badge" id="editor-mode-badge">MODE: VIEW</div>
+            </div>
+
             <canvas id="grid"></canvas>
             <div class="refresh-bar" id="refresh-bar"></div>
+
             <div class="info-panel">
                 <div class="info-panel-title">SELECTED TRACKER</div>
                 <div id="info-content">
                     <div style="color:var(--dim);font-size:.6rem">Click a tracker to inspect</div>
                 </div>
             </div>
+
+            <div class="beacon-editor-panel">
+                <div class="info-panel-title">SELECTED BEACON</div>
+                <div id="beacon-editor-content">
+                    <div style="color:var(--dim);font-size:.6rem">Click a live beacon from the sidebar</div>
+                </div>
+            </div>
+
+            <div class="canvas-help" id="canvas-help">
+                VIEW: drag to pan, scroll to zoom
+            </div>
         </div>
     </div>
 
     <div class="modal-overlay" id="setup-modal">
         <div class="modal">
-            <div class="modal-title">ROOM CONFIGURATION</div>
+            <div class="modal-topbar">
+                <div class="modal-title">SPACE CONFIGURATION</div>
+                <button class="tool-btn" onclick="closeSetupModal()">MINIMIZE</button>
+            </div>
+
             <div class="modal-sub">
-                Live beacons are loaded from backend decoded BLE data.<br>
-                Enter room dimensions and assign each live beacon a position in metres.<br>
-                Origin (0, 0) is the <span style="color:var(--accent)">bottom-left</span> corner of the room.
+                The drawn polygon is the actual environment.<br>
+                Draw the room shape on the main canvas, then place beacon markers inside it.
+            </div>
+
+            <div class="editor-instructions">
+                <div><strong>Draw Room:</strong> click on the grid to add vertices. Click near the first point or press
+                    <strong>Finish Room</strong> to close the shape.</div>
+                <div><strong>Place Beacons:</strong> choose <strong>PLACE BEACONS</strong>, select a beacon from the
+                    left sidebar, then click-drag on the canvas to position it inside the polygon.</div>
             </div>
 
             <div class="section-label">LIVE DETECTED BEACONS</div>
             <div class="live-beacon-box">
                 These MAC addresses are currently visible in recent decoded fPort 2 packets.
-                Only configured beacons will be used in trilateration.
+                Only configured beacons inside the saved room polygon will be used in trilateration.
                 <div class="live-beacon-list" id="live-beacon-list">
                     <div class="live-beacon-item">Loading live beacons...</div>
                 </div>
             </div>
 
-            <div class="section-label">ROOM DIMENSIONS</div>
-            <div class="dim-row">
-                <div class="dim-field">
-                    <div class="dim-label">WIDTH (metres)</div>
-                    <input class="dim-input" id="room-w" type="number" min="0.1" max="10000" placeholder="e.g. 10"
-                        step="0.1">
-                </div>
-                <div class="dim-field">
-                    <div class="dim-label">HEIGHT (metres)</div>
-                    <input class="dim-input" id="room-h" type="number" min="0.1" max="10000" placeholder="e.g. 8"
-                        step="0.1">
-                </div>
-            </div>
-
-            <div class="section-label">BEACON POSITIONS</div>
+            <div class="section-label">CONFIGURED BEACONS</div>
             <div class="modal-hint">
-                A row is created for each live beacon. You need at least 3 positioned beacons for trilateration.
+                Labels are editable. Coordinates can be changed from the bottom beacon editor panel or by dragging on
+                the canvas.
             </div>
 
             <div id="beacon-fields"></div>
 
-            <div class="modal-hint">
-                Coordinates must be within the room. Config is saved to backend and reused by the positioning engine.
-            </div>
-
             <div class="modal-actions">
-                <button class="btn-cancel" id="cancel-btn" onclick="closeSetupModal()">CANCEL</button>
+                <button class="btn-cancel" id="cancel-btn" onclick="closeSetupModal()">MINIMIZE</button>
                 <button class="btn-apply" onclick="applyConfig()">APPLY</button>
             </div>
         </div>

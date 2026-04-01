@@ -1,6 +1,7 @@
 import { state, POLL_MS } from "./state.js";
 import { getConfig, getLiveBeacons, getPositions } from "./api.js";
-import { resizeCanvas, centreCamera, drawScene, initCanvasInteractions } from "./canvas.js";
+import { resizeCanvas, centreCamera, drawScene } from "./canvas.js";
+import { initEditorInteractions, setEditorMode, clearRoomPolygon, finishRoomPolygon } from "./editor.js";
 import {
     openSetupModal,
     closeSetupModal,
@@ -12,14 +13,23 @@ import {
     updateInfoPanel,
     isSetupModalOpen,
     selectTracker,
+    selectBeacon,
     captureBeaconDraftFromForm,
-    initializeBeaconDraft
+    initializeBeaconDraft,
+    updateEditorModeUI,
+    updateSelectedBeaconPanel,
+    applySelectedBeaconPosition
 } from "./ui.js";
 
 window.openSetupModal = openSetupModal;
 window.closeSetupModal = closeSetupModal;
 window.applyConfig = applyConfig;
 window.selectTracker = selectTracker;
+window.selectBeacon = selectBeacon;
+window.setEditorMode = setEditorMode;
+window.clearRoomPolygon = clearRoomPolygon;
+window.finishRoomPolygon = finishRoomPolygon;
+window.applySelectedBeaconPosition = applySelectedBeaconPosition;
 
 function getLiveBeaconSignature(beacons) {
     return beacons
@@ -31,7 +41,10 @@ function getLiveBeaconSignature(beacons) {
 async function loadConfigFromBackend() {
     const config = await getConfig();
 
-    state.ROOM = config?.room || { w: 0, h: 0 };
+    state.ROOM = {
+        polygon: Array.isArray(config?.room?.polygon) ? config.room.polygon : []
+    };
+
     state.BEACON_POS = Array.isArray(config?.beacons)
         ? config.beacons.map(b => ({
             mac: String(b.mac || "").toLowerCase(),
@@ -41,7 +54,7 @@ async function loadConfigFromBackend() {
         }))
         : [];
 
-    if (state.ROOM.w && state.ROOM.h) {
+    if ((state.ROOM.polygon || []).length >= 3) {
         updateRoomBadge();
         centreCamera();
     }
@@ -52,7 +65,6 @@ async function refreshLiveBeacons() {
         const newBeacons = await getLiveBeacons();
         const newSignature = getLiveBeaconSignature(newBeacons);
 
-        // Preserve user input before any possible merge/rebuild
         if (isSetupModalOpen()) {
             captureBeaconDraftFromForm();
         }
@@ -65,25 +77,10 @@ async function refreshLiveBeacons() {
         document.getElementById("beacon-count-label").textContent = state.LIVE_BEACONS.length;
         renderLiveBeaconList();
 
-        // Only rebuild the form if the actual MAC list changed
         if (isSetupModalOpen() && beaconListChanged) {
-            const existingDraft = { ...state.beaconDraft };
-
-            // Merge in any newly seen beacons without destroying current typed values
-            state.LIVE_BEACONS.forEach((beacon, i) => {
-                const mac = String(beacon.mac || "").toLowerCase();
-                if (!existingDraft[mac]) {
-                    existingDraft[mac] = {
-                        mac,
-                        label: `Beacon ${i + 1}`,
-                        x: "",
-                        y: ""
-                    };
-                }
-            });
-
-            state.beaconDraft = existingDraft;
+            initializeBeaconDraft();
             buildBeaconFields();
+            updateSelectedBeaconPanel();
         }
     } catch (err) {
         console.error(err);
@@ -91,6 +88,7 @@ async function refreshLiveBeacons() {
         state.lastLiveBeaconSignature = "";
         document.getElementById("beacon-count-label").textContent = "0";
         renderLiveBeaconList();
+        updateSelectedBeaconPanel();
     }
 }
 
@@ -128,7 +126,7 @@ function animateBar() {
 
 async function init() {
     resizeCanvas();
-    initCanvasInteractions(drawScene);
+    initEditorInteractions();
 
     try {
         await loadConfigFromBackend();
@@ -138,19 +136,17 @@ async function init() {
 
     await refreshLiveBeacons();
 
-    const hasConfig = state.ROOM.w && state.ROOM.h && state.BEACON_POS.length >= 3;
-    if (hasConfig) {
-        document.getElementById("setup-modal").classList.remove("open");
-    } else {
-        document.getElementById("cancel-btn").style.display = "none";
-        document.getElementById("setup-modal").classList.add("open");
-        initializeBeaconDraft();
-        buildBeaconFields();
-    }
-
+    initializeBeaconDraft();
+    updateRoomBadge();
+    updateEditorModeUI();
+    updateSelectedBeaconPanel();
     drawScene();
     await refreshPositions();
     animateBar();
+
+    window.addEventListener("resize", () => {
+        resizeCanvas();
+    });
 
     setInterval(async () => {
         state.pollStart = Date.now();

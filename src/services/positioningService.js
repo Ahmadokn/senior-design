@@ -4,6 +4,103 @@ const DEFAULT_CONFIG_ID = "default";
 const DEFAULT_TX_POWER = -59;
 const DEFAULT_PATH_LOSS_N = 2.5;
 
+function normalizePolygon(polygon) {
+    if (!Array.isArray(polygon)) return [];
+    return polygon
+        .map(p => ({
+            x: Number(p?.x),
+            y: Number(p?.y)
+        }))
+        .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
+}
+
+function pointOnSegment(point, a, b, epsilon = 1e-9) {
+    const cross = (point.y - a.y) * (b.x - a.x) - (point.x - a.x) * (b.y - a.y);
+    if (Math.abs(cross) > epsilon) return false;
+
+    const dot = (point.x - a.x) * (b.x - a.x) + (point.y - a.y) * (b.y - a.y);
+    if (dot < -epsilon) return false;
+
+    const lenSq = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+    if (dot - lenSq > epsilon) return false;
+
+    return true;
+}
+
+function pointInPolygon(point, polygon) {
+    const pts = normalizePolygon(polygon);
+    if (pts.length < 3) return false;
+
+    for (let i = 0; i < pts.length; i += 1) {
+        const a = pts[i];
+        const b = pts[(i + 1) % pts.length];
+        if (pointOnSegment(point, a, b)) return true;
+    }
+
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const xi = pts[i].x;
+        const yi = pts[i].y;
+        const xj = pts[j].x;
+        const yj = pts[j].y;
+
+        const intersects =
+            ((yi > point.y) !== (yj > point.y)) &&
+            (point.x < ((xj - xi) * (point.y - yi)) / ((yj - yi) || Number.EPSILON) + xi);
+
+        if (intersects) inside = !inside;
+    }
+
+    return inside;
+}
+
+function closestPointOnSegment(point, a, b) {
+    const abx = b.x - a.x;
+    const aby = b.y - a.y;
+    const lenSq = abx * abx + aby * aby;
+
+    if (lenSq === 0) return { x: a.x, y: a.y };
+
+    let t = ((point.x - a.x) * abx + (point.y - a.y) * aby) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+
+    return {
+        x: a.x + t * abx,
+        y: a.y + t * aby
+    };
+}
+
+function closestPointOnPolygon(point, polygon) {
+    const pts = normalizePolygon(polygon);
+    if (pts.length === 0) return point;
+
+    let bestPoint = null;
+    let bestDistSq = Infinity;
+
+    for (let i = 0; i < pts.length; i += 1) {
+        const a = pts[i];
+        const b = pts[(i + 1) % pts.length];
+        const candidate = closestPointOnSegment(point, a, b);
+        const dx = point.x - candidate.x;
+        const dy = point.y - candidate.y;
+        const d2 = dx * dx + dy * dy;
+
+        if (d2 < bestDistSq) {
+            bestDistSq = d2;
+            bestPoint = candidate;
+        }
+    }
+
+    return bestPoint || point;
+}
+
+function clampToPolygon(point, polygon) {
+    const pts = normalizePolygon(polygon);
+    if (pts.length < 3) return point;
+    if (pointInPolygon(point, pts)) return point;
+    return closestPointOnPolygon(point, pts);
+}
+
 async function getLatestConfig(db) {
     const configCollection = db.collection("positioning_config");
 
@@ -12,7 +109,7 @@ async function getLatestConfig(db) {
     if (!cfg) {
         return {
             _id: DEFAULT_CONFIG_ID,
-            room: { w: 0, h: 0 },
+            room: { polygon: [] },
             beacons: [],
             algorithm: "trilateration",
             calibration: {
@@ -22,7 +119,12 @@ async function getLatestConfig(db) {
         };
     }
 
-    return cfg;
+    return {
+        ...cfg,
+        room: {
+            polygon: normalizePolygon(cfg?.room?.polygon)
+        }
+    };
 }
 
 async function saveConfig(db, payload) {
@@ -30,7 +132,9 @@ async function saveConfig(db, payload) {
 
     const doc = {
         _id: DEFAULT_CONFIG_ID,
-        room: payload.room || { w: 0, h: 0 },
+        room: {
+            polygon: normalizePolygon(payload?.room?.polygon)
+        },
         beacons: Array.isArray(payload.beacons) ? payload.beacons : [],
         algorithm: payload.algorithm || "trilateration",
         calibration: {
@@ -94,18 +198,6 @@ function parseRssi(rssiValue) {
     return Number.isFinite(parsed) ? parsed : null;
 }
 
-function clampToRoom(point, room) {
-    if (!point) return null;
-
-    const w = Number(room?.w || 0);
-    const h = Number(room?.h || 0);
-
-    return {
-        x: Math.min(Math.max(point.x, 0), w > 0 ? w : point.x),
-        y: Math.min(Math.max(point.y, 0), h > 0 ? h : point.y)
-    };
-}
-
 async function computePositions(db) {
     const decodedCollection = db.collection("decoded");
     const config = await getLatestConfig(db);
@@ -135,7 +227,6 @@ async function computePositions(db) {
         .limit(500)
         .toArray();
 
-    // keep latest doc per tracker
     const latestByTracker = new Map();
     for (const doc of docs) {
         if (!doc.devEui) continue;
@@ -178,9 +269,7 @@ async function computePositions(db) {
             });
         }
 
-        if (usable.length < 3) {
-            continue;
-        }
+        if (usable.length < 3) continue;
 
         let point = null;
 
@@ -190,7 +279,7 @@ async function computePositions(db) {
 
         if (!point) continue;
 
-        point = clampToRoom(point, config.room);
+        point = clampToPolygon(point, config.room?.polygon || []);
 
         output.push({
             devEui,

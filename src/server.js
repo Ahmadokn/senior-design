@@ -13,14 +13,10 @@ async function startServer() {
     const db = await connectDB();
 
     app.use(express.json());
-
     app.use(express.static(path.join(__dirname, "..", "public")));
 
     app.get("/api/health", (req, res) => {
-        res.json({
-            ok: true,
-            message: "Server is running"
-        });
+        res.json({ ok: true, message: "Server is running" });
     });
 
     app.get("/api/live-beacons", async (req, res) => {
@@ -29,9 +25,7 @@ async function startServer() {
             res.json(beacons);
         } catch (err) {
             console.error("Error fetching live beacons:", err.message);
-            res.status(500).json({
-                error: "Failed to fetch live beacons"
-            });
+            res.status(500).json({ error: "Failed to fetch live beacons" });
         }
     });
 
@@ -41,9 +35,7 @@ async function startServer() {
             res.json(config);
         } catch (err) {
             console.error("Error fetching config:", err.message);
-            res.status(500).json({
-                error: "Failed to fetch config"
-            });
+            res.status(500).json({ error: "Failed to fetch config" });
         }
     });
 
@@ -51,16 +43,12 @@ async function startServer() {
         try {
             const body = req.body || {};
 
-            if (!body.room || typeof body.room.w !== "number" || typeof body.room.h !== "number") {
-                return res.status(400).json({
-                    error: "room.w and room.h are required numbers"
-                });
+            if (!body.room || !Array.isArray(body.room.polygon) || body.room.polygon.length < 3) {
+                return res.status(400).json({ error: "room.polygon with at least 3 points is required" });
             }
 
             if (!Array.isArray(body.beacons) || body.beacons.length < 3) {
-                return res.status(400).json({
-                    error: "At least 3 beacons are required"
-                });
+                return res.status(400).json({ error: "At least 3 beacons are required" });
             }
 
             for (const beacon of body.beacons) {
@@ -69,9 +57,7 @@ async function startServer() {
                     typeof beacon.x !== "number" ||
                     typeof beacon.y !== "number"
                 ) {
-                    return res.status(400).json({
-                        error: "Each beacon must include mac, x, and y"
-                    });
+                    return res.status(400).json({ error: "Each beacon must include mac, x, and y" });
                 }
             }
 
@@ -79,9 +65,7 @@ async function startServer() {
             res.json(saved);
         } catch (err) {
             console.error("Error saving config:", err.message);
-            res.status(500).json({
-                error: "Failed to save config"
-            });
+            res.status(500).json({ error: "Failed to save config" });
         }
     });
 
@@ -91,14 +75,11 @@ async function startServer() {
             res.json(positions);
         } catch (err) {
             console.error("Error computing positions:", err.message);
-            res.status(500).json({
-                error: "Failed to compute positions"
-            });
+            res.status(500).json({ error: "Failed to compute positions" });
         }
     });
 
     const PORT = process.env.PORT || 3000;
-
     app.listen(PORT, () => {
         console.log(`✅ Web server running on http://localhost:${PORT}`);
     });

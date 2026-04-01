@@ -1,4 +1,5 @@
 import { state, camera } from "./state.js";
+import { getPolygonBounds, getPolygonCentroid } from "./geometry.js";
 
 const canvas = document.getElementById("grid");
 const ctx = canvas.getContext("2d");
@@ -14,13 +15,15 @@ export function resizeCanvas() {
 }
 
 export function centreCamera() {
-    if (!state.ROOM.w || !state.ROOM.h) return;
+    const polygon = state.ROOM.polygon || [];
+    const bounds = getPolygonBounds(polygon);
+    const centroid = getPolygonCentroid(polygon);
 
-    camera.x = state.ROOM.w / 2;
-    camera.y = state.ROOM.h / 2;
+    camera.x = centroid.x;
+    camera.y = centroid.y;
 
-    const scaleX = (canvas.width * 0.78) / state.ROOM.w;
-    const scaleY = (canvas.height * 0.78) / state.ROOM.h;
+    const scaleX = (canvas.width * 0.7) / bounds.width;
+    const scaleY = (canvas.height * 0.7) / bounds.height;
 
     camera.zoom = Math.min(
         Math.max(Math.min(scaleX, scaleY), camera.ZOOM_MIN),
@@ -42,48 +45,7 @@ export function toWorld(px, py) {
     };
 }
 
-export function initCanvasInteractions(onDraw) {
-    canvas.addEventListener("mousedown", e => {
-        camera.isDragging = true;
-        camera.dragStart = { x: e.clientX, y: e.clientY };
-        camera.camAtDrag = { x: camera.x, y: camera.y };
-        canvas.style.cursor = "grabbing";
-    });
-
-    window.addEventListener("mouseup", () => {
-        camera.isDragging = false;
-        canvas.style.cursor = "grab";
-    });
-
-    window.addEventListener("mousemove", e => {
-        if (!camera.isDragging) return;
-        camera.x = camera.camAtDrag.x - (e.clientX - camera.dragStart.x) / camera.zoom;
-        camera.y = camera.camAtDrag.y + (e.clientY - camera.dragStart.y) / camera.zoom;
-        onDraw();
-    });
-
-    canvas.addEventListener("wheel", e => {
-        e.preventDefault();
-        const rect = canvas.getBoundingClientRect();
-        const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
-        const before = toWorld(mx, my);
-
-        camera.zoom = Math.min(
-            camera.ZOOM_MAX,
-            Math.max(camera.ZOOM_MIN, camera.zoom * (e.deltaY < 0 ? 1.12 : 0.89))
-        );
-
-        const after = toWorld(mx, my);
-        camera.x += before.wx - after.wx;
-        camera.y += before.wy - after.wy;
-        onDraw();
-    }, { passive: false });
-
-    canvas.style.cursor = "grab";
-}
-
-function drawHex(ctx, cx, cy, r, stroke, lw) {
+function drawHex(cx, cy, r, stroke, lw) {
     ctx.beginPath();
     for (let i = 0; i < 6; i++) {
         const a = (Math.PI / 3) * i - Math.PI / 6;
@@ -95,6 +57,45 @@ function drawHex(ctx, cx, cy, r, stroke, lw) {
     ctx.strokeStyle = stroke;
     ctx.lineWidth = lw;
     ctx.stroke();
+}
+
+function drawPolygon(points, options = {}) {
+    if (!points || points.length === 0) return;
+
+    const {
+        stroke = "#ffd54f",
+        fill = "rgba(255, 213, 79, 0.08)",
+        lineWidth = 2,
+        close = true,
+        showVertices = true
+    } = options;
+
+    ctx.beginPath();
+    points.forEach((p, idx) => {
+        const { px, py } = toScreen(p.x, p.y);
+        if (idx === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+    });
+    if (close && points.length >= 3) ctx.closePath();
+
+    if (close && points.length >= 3) {
+        ctx.fillStyle = fill;
+        ctx.fill();
+    }
+
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+
+    if (showVertices) {
+        points.forEach((p, idx) => {
+            const { px, py } = toScreen(p.x, p.y);
+            ctx.beginPath();
+            ctx.arc(px, py, idx === 0 ? 5 : 4, 0, Math.PI * 2);
+            ctx.fillStyle = idx === 0 ? "#ffab40" : stroke;
+            ctx.fill();
+        });
+    }
 }
 
 export function drawScene() {
@@ -163,62 +164,53 @@ export function drawScene() {
     ctx.textAlign = "right";
     ctx.fillText(`zoom ${camera.zoom.toFixed(0)}px/m`, W - 12, H - 12);
 
-    if (state.ROOM.w && state.ROOM.h) {
-        const bl = toScreen(0, 0);
-        const tr = toScreen(state.ROOM.w, state.ROOM.h);
-        const rw = tr.px - bl.px;
-        const rh = bl.py - tr.py;
+    const savedPolygon = state.ROOM.polygon || [];
+    if (savedPolygon.length >= 3) {
+        drawPolygon(savedPolygon, {
+            stroke: "#ffd54f",
+            fill: "rgba(255, 213, 79, 0.08)",
+            lineWidth: 2,
+            close: true,
+            showVertices: true
+        });
+    }
 
-        ctx.fillStyle = "rgba(0,229,255,0.03)";
-        ctx.fillRect(bl.px, tr.py, rw, rh);
-
-        ctx.strokeStyle = "#00897b";
-        ctx.lineWidth = 2;
-        ctx.setLineDash([6, 4]);
-        ctx.strokeRect(bl.px, tr.py, rw, rh);
-        ctx.setLineDash([]);
-
-        ctx.fillStyle = "#00897b99";
-        ctx.font = "9px 'Share Tech Mono'";
-        ctx.textAlign = "left";
-        ctx.fillText("(0,0)", bl.px + 4, bl.py - 4);
-        ctx.textAlign = "right";
-        ctx.fillText(`(${state.ROOM.w},${state.ROOM.h})`, tr.px - 4, tr.py + 12);
-
-        const midX = (bl.px + tr.px) / 2;
-        const midY = (bl.py + tr.py) / 2;
-        ctx.fillStyle = "#00897b";
-        ctx.textAlign = "center";
-        ctx.fillText(`${state.ROOM.w}m`, midX, bl.py + 14);
-        ctx.save();
-        ctx.translate(bl.px - 14, midY);
-        ctx.rotate(-Math.PI / 2);
-        ctx.fillText(`${state.ROOM.h}m`, 0, 0);
-        ctx.restore();
+    const draftPolygon = state.editor.roomDraftPoints || [];
+    if (draftPolygon.length > 0 && state.editor.mode === "drawRoom") {
+        drawPolygon(draftPolygon, {
+            stroke: "#ffab40",
+            fill: "rgba(255, 171, 64, 0.05)",
+            lineWidth: 2,
+            close: false,
+            showVertices: true
+        });
     }
 
     state.BEACON_POS.forEach(b => {
         const { px, py } = toScreen(b.x, b.y);
+        const selected = state.selectedBeaconMac === String(b.mac || "").toLowerCase();
+        const stroke = selected ? "#ffd54f" : (state.editor.mode === "editBeacons" ? "#00e5ff" : "#00897b");
+        const fill = selected ? "#ffd54f" : (state.editor.mode === "editBeacons" ? "#00e5ff" : "#00897b");
 
         ctx.beginPath();
-        ctx.arc(px, py, 8, 0, Math.PI * 2);
-        ctx.strokeStyle = "#00897b";
-        ctx.lineWidth = 1.5;
+        ctx.arc(px, py, selected ? 11 : 9, 0, Math.PI * 2);
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = selected ? 3 : 2;
         ctx.stroke();
 
         ctx.beginPath();
-        ctx.arc(px, py, 3, 0, Math.PI * 2);
-        ctx.fillStyle = "#00897b";
+        ctx.arc(px, py, selected ? 5 : 4, 0, Math.PI * 2);
+        ctx.fillStyle = fill;
         ctx.fill();
 
-        ctx.fillStyle = "#00897b";
+        ctx.fillStyle = stroke;
         ctx.font = "9px 'Share Tech Mono'";
         ctx.textAlign = "center";
-        ctx.fillText(b.label || b.mac || "Beacon", px, py - 13);
+        ctx.fillText(b.label || b.mac || "Beacon", px, py - 14);
 
         ctx.fillStyle = "#37474f";
         ctx.font = "8px 'Share Tech Mono'";
-        ctx.fillText(`(${b.x},${b.y})`, px, py + 20);
+        ctx.fillText(`(${Number(b.x).toFixed(1)},${Number(b.y).toFixed(1)})`, px, py + 20);
     });
 
     Object.entries(state.positions).forEach(([eui, t]) => {
@@ -246,7 +238,7 @@ export function drawScene() {
         ctx.fill();
         ctx.shadowBlur = 0;
 
-        drawHex(ctx, px, py, isSel ? 16 : 12, color + "88", 1.5);
+        drawHex(px, py, isSel ? 16 : 12, color + "88", 1.5);
 
         ctx.fillStyle = color;
         ctx.font = `${isSel ? 11 : 9}px 'Share Tech Mono'`;

@@ -11,6 +11,8 @@
     --dim: #90a4ae;
     --panel-bg: rgba(4, 20, 28, 0.88);
     --glow: 0 0 12px #00e5ff88, 0 0 30px #00e5ff22;
+    --yellow: #ffd54f;
+    --orange: #ffab40;
 }
 
 * {
@@ -140,7 +142,7 @@ header {
 }
 
 .sidebar {
-    width: 240px;
+    width: 260px;
     flex-shrink: 0;
     border-right: 1px solid var(--teal);
     background: var(--panel-bg);
@@ -159,6 +161,12 @@ header {
     padding: 0 16px 12px;
     border-bottom: 1px solid var(--grid);
     margin-bottom: 8px;
+}
+
+.sidebar-subtitle {
+    margin-top: 12px;
+    border-top: 1px solid var(--grid);
+    padding-top: 12px;
 }
 
 .tracker-card {
@@ -217,6 +225,56 @@ header {
     line-height: 1.8;
 }
 
+.beacon-sidebar-card {
+    margin: 2px 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--grid);
+    border-radius: 2px;
+    position: relative;
+    overflow: hidden;
+    background: rgba(0, 229, 255, .03);
+    cursor: pointer;
+    transition: all .2s;
+}
+
+.beacon-sidebar-card::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--teal);
+    box-shadow: 0 0 8px var(--teal);
+}
+
+.beacon-sidebar-card:hover,
+.beacon-sidebar-card.active {
+    border-color: var(--cyan);
+    background: rgba(0, 229, 255, .08);
+}
+
+.beacon-sidebar-name {
+    font-family: 'Orbitron', monospace;
+    font-size: .62rem;
+    color: var(--accent);
+    letter-spacing: .08em;
+    margin-bottom: 4px;
+}
+
+.beacon-sidebar-mac {
+    font-size: .55rem;
+    color: var(--dim);
+    word-break: break-all;
+}
+
+.beacon-sidebar-meta {
+    font-size: .58rem;
+    color: var(--teal);
+    margin-top: 6px;
+    line-height: 1.6;
+}
+
 .canvas-wrap {
     flex: 1;
     position: relative;
@@ -225,24 +283,93 @@ header {
 
 canvas {
     position: absolute;
-    top: 0;
-    left: 0;
+    inset: 0;
     width: 100%;
     height: 100%;
 }
 
-.info-panel {
+.canvas-toolbar {
+    position: absolute;
+    top: 14px;
+    left: 20px;
+    z-index: 5;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    background: rgba(4, 20, 28, 0.82);
+    border: 1px solid var(--teal);
+    padding: 10px 12px;
+    backdrop-filter: blur(6px);
+}
+
+.tool-btn {
+    cursor: pointer;
+    border: 1px solid var(--teal);
+    padding: 5px 10px;
+    background: transparent;
+    color: var(--dim);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    transition: all .2s;
+}
+
+.tool-btn:hover,
+.tool-btn.active {
+    border-color: var(--cyan);
+    color: var(--cyan);
+    background: rgba(0, 229, 255, 0.08);
+}
+
+.tool-btn.danger:hover {
+    border-color: var(--danger);
+    color: var(--danger);
+    background: rgba(255, 23, 68, 0.08);
+}
+
+.editor-mode-badge {
+    margin-left: 6px;
+    color: var(--accent);
+    font-size: .65rem;
+}
+
+.canvas-help {
+    position: absolute;
+    top: 70px;
+    left: 20px;
+    z-index: 5;
+    background: rgba(4, 20, 28, 0.82);
+    border: 1px solid var(--grid);
+    padding: 8px 10px;
+    font-size: .62rem;
+    color: var(--dim);
+    max-width: 360px;
+    line-height: 1.6;
+}
+
+.info-panel,
+.beacon-editor-panel {
     position: absolute;
     bottom: 20px;
-    right: 20px;
-    width: 280px;
     background: var(--panel-bg);
     border: 1px solid var(--teal);
     padding: 14px;
     font-size: .65rem;
     line-height: 2;
     backdrop-filter: blur(8px);
+}
+
+.info-panel {
+    right: 20px;
+    width: 300px;
     pointer-events: none;
+}
+
+.beacon-editor-panel {
+    left: 20px;
+    width: 320px;
+    z-index: 5;
 }
 
 .info-panel-title {
@@ -268,6 +395,29 @@ canvas {
 .info-val {
     color: var(--accent);
     text-align: right;
+}
+
+.beacon-editor-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.beacon-editor-actions {
+    margin-top: 10px;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.beacon-editor-input {
+    width: 100%;
+    background: #040d12;
+    border: 1px solid var(--teal);
+    color: var(--accent);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: .78rem;
+    padding: 7px 9px;
+    outline: none;
 }
 
 .corner {
@@ -337,27 +487,27 @@ canvas {
 
 .modal-overlay {
     display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(4, 13, 18, .92);
-    backdrop-filter: blur(6px);
-    z-index: 100;
-    align-items: center;
-    justify-content: center;
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    z-index: 20;
+    pointer-events: none;
 }
 
 .modal-overlay.open {
-    display: flex;
+    display: block;
 }
 
 .modal {
-    width: 640px;
-    max-height: 88vh;
+    width: 520px;
+    max-height: calc(100vh - 120px);
     overflow-y: auto;
-    background: #060f16;
+    background: rgba(6, 15, 22, 0.96);
     border: 1px solid var(--teal);
-    padding: 28px 32px;
+    padding: 24px 28px;
     position: relative;
+    pointer-events: auto;
+    backdrop-filter: blur(8px);
 }
 
 .modal::before,
@@ -380,6 +530,13 @@ canvas {
     bottom: -1px;
     right: -1px;
     border-width: 0 2px 2px 0;
+}
+
+.modal-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
 }
 
 .modal-title {
@@ -443,6 +600,19 @@ canvas {
 
 .dim-input::placeholder {
     color: var(--dim);
+}
+
+.editor-instructions {
+    border: 1px solid var(--grid);
+    background: rgba(0, 229, 255, .03);
+    padding: 10px 12px;
+    margin-bottom: 14px;
+    font-size: .62rem;
+    line-height: 1.8;
+    color: var(--dim);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
 }
 
 .live-beacon-box {
