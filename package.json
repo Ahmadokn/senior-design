@@ -4,14 +4,18 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node src/index.js",
+    "start": "node src/app.js",
     "simulate": "node src/simulator/uplinkSimulator.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@chirpstack/chirpstack-api": "^4.16.2",
+    "@grpc/grpc-js": "^1.14.3",
+    "axios": "^1.13.6",
     "dotenv": "^17.3.1",
+    "express": "^5.2.1",
     "mongodb": "^7.1.0",
     "mqtt": "^5.15.0",
     "uuid": "^13.0.0"
