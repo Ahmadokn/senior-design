@@ -1,70 +1,8 @@
-// const { connectDB } = require("./services/database");
-// const { startMQTT } = require("./services/mqttService");
-// const { decodeBase64Payload } = require("./decoders/decodeWithVendor");
-// const { sendDownlink } = require("./services/downlinkService");
-
-// async function start() {
-
-//   const db = await connectDB();
-//   const rawCollection = db.collection("raw_uplinks");
-
-//   console.log("✅ Connected to MongoDB");
-//   console.log("🚀 Listening for uplinks...\n");
-
-//   startMQTT(async (topic, message) => {
-
-//     try {
-
-//       const data = JSON.parse(message.toString());
-
-//       if (!data.data || !data.fPort) return;
-
-//       const decoded = decodeBase64Payload(data.data, data.fPort);
-//       const devEui = data.deviceInfo?.devEui;
-
-//       // Store RAW uplink only
-//       await rawCollection.insertOne({
-//         receivedAt: new Date(),
-//         topic,
-//         raw: data,
-//         decoderVersion: "vendor_debug_v1"
-//       });
-
-//       console.log("========================================");
-//       console.log("📡 NEW UPLINK RECEIVED");
-//       console.log("Device:", data.deviceInfo?.deviceName || "Unknown");
-//       console.log("DevEUI:", devEui || "Unknown");
-//       console.log("FPort:", data.fPort);
-//       console.log("----------------------------------------");
-//       console.log("Decoded:");
-//       console.log(JSON.stringify(decoded, null, 2));
-//       console.log("========================================\n");
-
-//       // Loop prevention:
-//       // only send downlink when uplink is on FPort 8
-//       // if (devEui && data.fPort === 8) {
-//       //   console.log("📤 FPort 8 detected → sending downlink to", devEui);
-//       //   sendDownlink(devEui);
-//       // }
-
-//     } catch (err) {
-
-//       console.error("Processing error:", err.message);
-
-//     }
-
-//   });
-
-// }
-
-// start();
-
-
 const { connectDB } = require("./services/database");
 const { startMQTT } = require("./services/mqttService");
 const { decodeBase64Payload } = require("./decoders/decodeWithVendor");
 
-async function start() {
+async function startMQTTApp() {
   const db = await connectDB();
   const decodedCollection = db.collection("decoded");
 
@@ -77,23 +15,16 @@ async function start() {
 
       if (!data.data || !data.fPort) return;
 
-      // Only process and store fPort 2 uplinks
-      if (data.fPort !== 2) return;
-
-      const decoded = decodeBase64Payload(data.data, data.fPort);
       const devEui = data.deviceInfo?.devEui;
       const deviceName = data.deviceInfo?.deviceName || "Unknown";
 
-      // Store decoded only, in the structure expected by trilateration.py
-      await decodedCollection.insertOne({
-        receivedAt: new Date(),
-        topic,
-        fPort: data.fPort,
-        devEui,
-        deviceName,
-        decoded: decoded.data,
-        decoderVersion: "vendor_debug_v1"
-      });
+      let decoded = null;
+
+      try {
+        decoded = decodeBase64Payload(data.data, data.fPort);
+      } catch (decodeErr) {
+        console.error(`Decode error on fPort ${data.fPort}:`, decodeErr.message);
+      }
 
       console.log("========================================");
       console.log("📡 NEW UPLINK RECEIVED");
@@ -101,22 +32,42 @@ async function start() {
       console.log("DevEUI:", devEui || "Unknown");
       console.log("FPort:", data.fPort);
       console.log("----------------------------------------");
-      console.log("Stored decoded document:");
-      console.log(JSON.stringify({
-        receivedAt: new Date(),
-        topic,
-        fPort: data.fPort,
-        devEui,
-        deviceName,
-        decoded: decoded.data,
-        decoderVersion: "vendor_debug_v1"
-      }, null, 2));
-      console.log("========================================\n");
 
+      if (decoded) {
+        console.log("Decoded:");
+        console.log(JSON.stringify(decoded, null, 2));
+      } else {
+        console.log("Decoded:");
+        console.log("No decoded output available");
+      }
+
+      // Only store fPort 2 uplinks in MongoDB
+      if (data.fPort === 2) {
+        const docToStore = {
+          receivedAt: new Date(),
+          topic,
+          fPort: data.fPort,
+          devEui,
+          deviceName,
+          decoded: decoded?.data ?? null,
+          decoderVersion: "vendor_debug_v1"
+        };
+
+        await decodedCollection.insertOne(docToStore);
+
+        console.log("----------------------------------------");
+        console.log("Stored decoded document:");
+        console.log(JSON.stringify(docToStore, null, 2));
+      } else {
+        console.log("----------------------------------------");
+        console.log(`Not stored in DB because fPort is ${data.fPort}, not 2`);
+      }
+
+      console.log("========================================\n");
     } catch (err) {
       console.error("Processing error:", err.message);
     }
   });
 }
 
-module.exports = start;
+module.exports = startMQTTApp;
