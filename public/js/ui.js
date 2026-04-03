@@ -18,8 +18,9 @@ export function updateRoomBadge() {
     }
 
     const bounds = getPolygonBounds(polygon);
+
     badge.style.display = "flex";
-    label.textContent = `${polygon.length} pts | ${bounds.width.toFixed(1)}×${bounds.height.toFixed(1)}m`;
+    label.textContent = `${polygon.length} pts | ${bounds.width.toFixed(2)}m × ${bounds.height.toFixed(2)}m`;
 }
 
 export function updateEditorModeUI() {

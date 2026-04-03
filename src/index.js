@@ -17,6 +17,7 @@ async function startMQTTApp() {
 
       const devEui = data.deviceInfo?.devEui;
       const deviceName = data.deviceInfo?.deviceName || "Unknown";
+      const isSimulated = Boolean(data.isSimulated);
 
       let decoded = null;
 
@@ -31,6 +32,7 @@ async function startMQTTApp() {
       console.log("Device:", deviceName);
       console.log("DevEUI:", devEui || "Unknown");
       console.log("FPort:", data.fPort);
+      console.log("Simulated:", isSimulated ? "Yes" : "No");
       console.log("----------------------------------------");
 
       if (decoded) {
@@ -49,6 +51,7 @@ async function startMQTTApp() {
           fPort: data.fPort,
           devEui,
           deviceName,
+          isSimulated,
           decoded: decoded?.data ?? null,
           decoderVersion: "vendor_debug_v1"
         };

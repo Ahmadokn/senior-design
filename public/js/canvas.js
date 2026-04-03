@@ -59,6 +59,143 @@ function drawHex(cx, cy, r, stroke, lw) {
     ctx.stroke();
 }
 
+function distanceMeters(a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+function midpoint(a, b) {
+    return {
+        x: (a.x + b.x) / 2,
+        y: (a.y + b.y) / 2
+    };
+}
+
+function vector(a, b) {
+    return {
+        x: b.x - a.x,
+        y: b.y - a.y
+    };
+}
+
+function magnitude(v) {
+    return Math.sqrt(v.x * v.x + v.y * v.y);
+}
+
+function areCollinearAndSameDirection(a, b, c, epsilon = 1e-9) {
+    const ab = vector(a, b);
+    const bc = vector(b, c);
+
+    const abLen = magnitude(ab);
+    const bcLen = magnitude(bc);
+
+    if (abLen < epsilon || bcLen < epsilon) return false;
+
+    const cross = ab.x * bc.y - ab.y * bc.x;
+    if (Math.abs(cross) > epsilon) return false;
+
+    const dot = ab.x * bc.x + ab.y * bc.y;
+    return dot > 0;
+}
+
+function buildMeasurementChains(points, close = true) {
+    if (!points || points.length < 2) return [];
+
+    const chains = [];
+
+    if (!close) {
+        let chainStart = points[0];
+        let prev = points[1];
+
+        for (let i = 2; i < points.length; i++) {
+            const curr = points[i];
+
+            if (!areCollinearAndSameDirection(chainStart, prev, curr) &&
+                !areCollinearAndSameDirection(points[i - 2], prev, curr)) {
+                chains.push({ start: chainStart, end: prev });
+                chainStart = prev;
+            }
+
+            prev = curr;
+        }
+
+        chains.push({ start: chainStart, end: prev });
+        return chains;
+    }
+
+    // Closed polygon:
+    // first build chains over the open sequence, then add closing segment,
+    // then merge first/last chain if they are actually one straight wall.
+    const openChains = buildMeasurementChains(points, false);
+
+    const lastPoint = points[points.length - 1];
+    const firstPoint = points[0];
+
+    if (distanceMeters(lastPoint, firstPoint) > 1e-9) {
+        openChains.push({ start: lastPoint, end: firstPoint });
+    }
+
+    if (openChains.length >= 2) {
+        const firstChain = openChains[0];
+        const lastChain = openChains[openChains.length - 1];
+
+        const shared = firstPoint;
+        const beforeShared = lastChain.start;
+        const afterShared = firstChain.end;
+
+        if (areCollinearAndSameDirection(beforeShared, shared, afterShared)) {
+            openChains[0] = {
+                start: lastChain.start,
+                end: firstChain.end
+            };
+            openChains.pop();
+        }
+    }
+
+    return openChains;
+}
+
+function drawSegmentMeasurement(a, b) {
+    const mid = midpoint(a, b);
+    const { px, py } = toScreen(mid.x, mid.y);
+    const len = distanceMeters(a, b);
+
+    ctx.save();
+    ctx.font = "10px 'Share Tech Mono'";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    const label = `${len.toFixed(2)}m`;
+    const paddingX = 6;
+    const paddingY = 4;
+    const textWidth = ctx.measureText(label).width;
+
+    ctx.fillStyle = "rgba(4, 20, 28, 0.92)";
+    ctx.strokeStyle = "#0d3a4a";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.rect(
+        px - textWidth / 2 - paddingX,
+        py - 8 - paddingY,
+        textWidth + paddingX * 2,
+        16 + paddingY * 2
+    );
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = "#ffd54f";
+    ctx.fillText(label, px, py);
+    ctx.restore();
+}
+
+function drawPolygonMeasurements(points, close = true) {
+    const chains = buildMeasurementChains(points, close);
+    for (const chain of chains) {
+        drawSegmentMeasurement(chain.start, chain.end);
+    }
+}
+
 function drawPolygon(points, options = {}) {
     if (!points || points.length === 0) return;
 
@@ -67,7 +204,8 @@ function drawPolygon(points, options = {}) {
         fill = "rgba(255, 213, 79, 0.08)",
         lineWidth = 2,
         close = true,
-        showVertices = true
+        showVertices = true,
+        showMeasurements = true
     } = options;
 
     ctx.beginPath();
@@ -96,6 +234,53 @@ function drawPolygon(points, options = {}) {
             ctx.fill();
         });
     }
+
+    if (showMeasurements) {
+        drawPolygonMeasurements(points, close);
+    }
+}
+
+function drawPolygonSummary(polygon) {
+    if (!polygon || polygon.length < 3) return;
+
+    const bounds = getPolygonBounds(polygon);
+    const centroid = getPolygonCentroid(polygon);
+    const { px, py } = toScreen(centroid.x, centroid.y);
+
+    let perimeter = 0;
+    for (let i = 0; i < polygon.length; i++) {
+        const a = polygon[i];
+        const b = polygon[(i + 1) % polygon.length];
+        perimeter += distanceMeters(a, b);
+    }
+
+    const lines = [
+        `Bounds: ${bounds.width.toFixed(2)}m × ${bounds.height.toFixed(2)}m`,
+        `Perimeter: ${perimeter.toFixed(2)}m`
+    ];
+
+    ctx.save();
+    ctx.font = "10px 'Share Tech Mono'";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+
+    const width = Math.max(...lines.map(line => ctx.measureText(line).width)) + 16;
+    const height = lines.length * 14 + 12;
+
+    ctx.fillStyle = "rgba(4, 20, 28, 0.94)";
+    ctx.strokeStyle = "#0d3a4a";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.rect(px + 12, py + 12, width, height);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = "#b2ebf2";
+    lines.forEach((line, idx) => {
+        ctx.fillText(line, px + 20, py + 18 + idx * 14);
+    });
+
+    ctx.restore();
 }
 
 export function drawScene() {
@@ -171,8 +356,11 @@ export function drawScene() {
             fill: "rgba(255, 213, 79, 0.08)",
             lineWidth: 2,
             close: true,
-            showVertices: true
+            showVertices: true,
+            showMeasurements: true
         });
+
+        drawPolygonSummary(savedPolygon);
     }
 
     const draftPolygon = state.editor.roomDraftPoints || [];
@@ -182,7 +370,8 @@ export function drawScene() {
             fill: "rgba(255, 171, 64, 0.05)",
             lineWidth: 2,
             close: false,
-            showVertices: true
+            showVertices: true,
+            showMeasurements: true
         });
     }
 

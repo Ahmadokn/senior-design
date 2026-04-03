@@ -17,7 +17,8 @@ export const state = {
         roomDraftPoints: [],
         isPanning: false,
         panMoved: false,
-        draggingBeaconMac: null
+        draggingBeaconMac: null,
+        selectedDraftSegmentIndex: null
     }
 };
 
