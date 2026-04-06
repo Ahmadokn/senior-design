@@ -25,8 +25,8 @@ function getSnappedWorld(evt, canvas) {
     const world = toWorld(mouse.x, mouse.y);
 
     return {
-        x: snap(world.wx),
-        y: snap(world.wy)
+        x: Number(snap(world.wx).toFixed(2)),
+        y: Number(snap(world.wy).toFixed(2))
     };
 }
 

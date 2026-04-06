@@ -1,4 +1,4 @@
-import { state, camera } from "./state.js";
+import { state, camera, GRID_MAJOR_STEP, GRID_MINOR_STEP } from "./state.js";
 import { getPolygonBounds, getPolygonCentroid } from "./geometry.js";
 
 const canvas = document.getElementById("grid");
@@ -313,37 +313,80 @@ function drawPreviewSegment() {
     drawSegmentMeasurement(start, end, "#6ee7ff");
 }
 
-export function drawScene() {
+function drawGrid() {
     const W = canvas.width;
     const H = canvas.height;
-
-    ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = "#040d12";
-    ctx.fillRect(0, 0, W, H);
 
     const wLeft = toWorld(0, H).wx;
     const wRight = toWorld(W, 0).wx;
     const wBot = toWorld(0, H).wy;
     const wTop = toWorld(0, 0).wy;
-    const step = camera.zoom < 20 ? 5 : 1;
 
-    for (let wx = Math.floor(wLeft / step) * step; wx <= wRight + step; wx += step) {
+    const minorPx = GRID_MINOR_STEP * camera.zoom;
+    const showMinor = minorPx >= 5;      // common modern behavior: hide tiny grid when zoomed out
+    const showUltraFine = minorPx >= 10; // stronger presence when zoomed in enough
+
+    if (showMinor) {
+        for (
+            let wx = Math.floor(wLeft / GRID_MINOR_STEP) * GRID_MINOR_STEP;
+            wx <= wRight + GRID_MINOR_STEP;
+            wx += GRID_MINOR_STEP
+        ) {
+            const { px } = toScreen(wx, 0);
+            const isMajor = Math.abs((wx / GRID_MAJOR_STEP) - Math.round(wx / GRID_MAJOR_STEP)) < 1e-9;
+            if (isMajor) continue;
+
+            ctx.beginPath();
+            ctx.moveTo(px, 0);
+            ctx.lineTo(px, H);
+            ctx.strokeStyle = showUltraFine ? "#0a1620" : "#08131b";
+            ctx.lineWidth = 0.6;
+            ctx.stroke();
+        }
+
+        for (
+            let wy = Math.floor(wBot / GRID_MINOR_STEP) * GRID_MINOR_STEP;
+            wy <= wTop + GRID_MINOR_STEP;
+            wy += GRID_MINOR_STEP
+        ) {
+            const { py } = toScreen(0, wy);
+            const isMajor = Math.abs((wy / GRID_MAJOR_STEP) - Math.round(wy / GRID_MAJOR_STEP)) < 1e-9;
+            if (isMajor) continue;
+
+            ctx.beginPath();
+            ctx.moveTo(0, py);
+            ctx.lineTo(W, py);
+            ctx.strokeStyle = showUltraFine ? "#0a1620" : "#08131b";
+            ctx.lineWidth = 0.6;
+            ctx.stroke();
+        }
+    }
+
+    for (
+        let wx = Math.floor(wLeft / GRID_MAJOR_STEP) * GRID_MAJOR_STEP;
+        wx <= wRight + GRID_MAJOR_STEP;
+        wx += GRID_MAJOR_STEP
+    ) {
         const { px } = toScreen(wx, 0);
         ctx.beginPath();
         ctx.moveTo(px, 0);
         ctx.lineTo(px, H);
-        ctx.strokeStyle = wx % 5 === 0 ? "#0d3a4a" : "#071d26";
-        ctx.lineWidth = wx % 5 === 0 ? 1.5 : 0.8;
+        ctx.strokeStyle = "#0d3a4a";
+        ctx.lineWidth = 1.2;
         ctx.stroke();
     }
 
-    for (let wy = Math.floor(wBot / step) * step; wy <= wTop + step; wy += step) {
+    for (
+        let wy = Math.floor(wBot / GRID_MAJOR_STEP) * GRID_MAJOR_STEP;
+        wy <= wTop + GRID_MAJOR_STEP;
+        wy += GRID_MAJOR_STEP
+    ) {
         const { py } = toScreen(0, wy);
         ctx.beginPath();
         ctx.moveTo(0, py);
         ctx.lineTo(W, py);
-        ctx.strokeStyle = wy % 5 === 0 ? "#0d3a4a" : "#071d26";
-        ctx.lineWidth = wy % 5 === 0 ? 1.5 : 0.8;
+        ctx.strokeStyle = "#0d3a4a";
+        ctx.lineWidth = 1.2;
         ctx.stroke();
     }
 
@@ -354,6 +397,7 @@ export function drawScene() {
     ctx.moveTo(o.px, 0);
     ctx.lineTo(o.px, H);
     ctx.stroke();
+
     ctx.beginPath();
     ctx.moveTo(0, o.py);
     ctx.lineTo(W, o.py);
@@ -363,21 +407,40 @@ export function drawScene() {
     ctx.font = "10px 'Share Tech Mono'";
     ctx.textAlign = "center";
 
-    for (let wx = Math.floor(wLeft / 5) * 5; wx <= wRight; wx += 5) {
+    for (
+        let wx = Math.floor(wLeft / GRID_MAJOR_STEP) * GRID_MAJOR_STEP;
+        wx <= wRight;
+        wx += GRID_MAJOR_STEP
+    ) {
         const { px } = toScreen(wx, 0);
-        ctx.fillText(`${wx}m`, px, Math.min(H - 4, Math.max(14, o.py - 4)));
+        ctx.fillText(`${wx.toFixed(wx % 1 === 0 ? 0 : 2)}m`, px, Math.min(H - 4, Math.max(14, o.py - 4)));
     }
 
     ctx.textAlign = "left";
-    for (let wy = Math.floor(wBot / 5) * 5; wy <= wTop; wy += 5) {
+    for (
+        let wy = Math.floor(wBot / GRID_MAJOR_STEP) * GRID_MAJOR_STEP;
+        wy <= wTop;
+        wy += GRID_MAJOR_STEP
+    ) {
         const { py } = toScreen(0, wy);
-        ctx.fillText(`${wy}m`, Math.max(4, o.px + 4), py + 4);
+        ctx.fillText(`${wy.toFixed(wy % 1 === 0 ? 0 : 2)}m`, Math.max(4, o.px + 4), py + 4);
     }
 
     ctx.fillStyle = "#1a3a44";
     ctx.font = "9px 'Share Tech Mono'";
     ctx.textAlign = "right";
     ctx.fillText(`zoom ${camera.zoom.toFixed(0)}px/m`, W - 12, H - 12);
+}
+
+export function drawScene() {
+    const W = canvas.width;
+    const H = canvas.height;
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#040d12";
+    ctx.fillRect(0, 0, W, H);
+
+    drawGrid();
 
     const savedPolygon = state.ROOM.polygon || [];
     if (savedPolygon.length >= 3) {
@@ -430,7 +493,7 @@ export function drawScene() {
 
         ctx.fillStyle = "#37474f";
         ctx.font = "8px 'Share Tech Mono'";
-        ctx.fillText(`(${Number(b.x).toFixed(1)},${Number(b.y).toFixed(1)})`, px, py + 20);
+        ctx.fillText(`(${Number(b.x).toFixed(2)},${Number(b.y).toFixed(2)})`, px, py + 20);
     });
 
     Object.entries(state.positions).forEach(([eui, t]) => {

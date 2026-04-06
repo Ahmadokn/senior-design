@@ -87,8 +87,15 @@ async function getLiveBeacons(db) {
         configuredBeaconMap.set(mac, beacon);
     }
 
+    // Only consider very recent packets
+    const cutoff = new Date(Date.now() - 30 * 1000); // last 30 seconds
+
     const docs = await decodedCollection
-        .find({ fPort: 2, "decoded.mac_data.0": { $exists: true } })
+        .find({
+            fPort: 2,
+            receivedAt: { $gte: cutoff },
+            "decoded.mac_data.0": { $exists: true }
+        })
         .sort({ receivedAt: -1 })
         .limit(200)
         .toArray();
@@ -104,6 +111,7 @@ async function getLiveBeacons(db) {
 
             if (!beaconMap.has(mac)) {
                 const saved = configuredBeaconMap.get(mac);
+
                 beaconMap.set(mac, {
                     mac,
                     label: saved?.label || null,

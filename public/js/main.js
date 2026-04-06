@@ -20,6 +20,7 @@ import {
     updateSelectedBeaconPanel,
     applySelectedBeaconPosition,
     updateSegmentEditorPanel,
+    normalizeAllBeaconLabels,
     applyCurrentSegmentLength
 } from "./ui.js";
 
@@ -78,10 +79,12 @@ async function refreshLiveBeacons() {
         state.lastLiveBeaconSignature = newSignature;
 
         document.getElementById("beacon-count-label").textContent = state.LIVE_BEACONS.length;
+
+        initializeBeaconDraft();
+        normalizeAllBeaconLabels();
         renderLiveBeaconList();
 
         if (isSetupModalOpen() && beaconListChanged) {
-            initializeBeaconDraft();
             buildBeaconFields();
             updateSelectedBeaconPanel();
         }
@@ -91,6 +94,7 @@ async function refreshLiveBeacons() {
         state.lastLiveBeaconSignature = "";
         document.getElementById("beacon-count-label").textContent = "0";
         renderLiveBeaconList();
+        normalizeAllBeaconLabels();
         updateSelectedBeaconPanel();
     }
 }
@@ -140,6 +144,7 @@ async function init() {
     await refreshLiveBeacons();
 
     initializeBeaconDraft();
+    normalizeAllBeaconLabels();
     updateRoomBadge();
     updateEditorModeUI();
     updateSelectedBeaconPanel();

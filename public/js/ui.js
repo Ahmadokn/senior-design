@@ -57,30 +57,62 @@ export function updateEditorModeUI() {
     if (state.editor.mode === "editBeacons") document.getElementById("tool-edit-beacons").classList.add("active");
 }
 
-function getConfiguredBeaconMap() {
-    return new Map(
-        state.BEACON_POS.map(b => [String(b.mac || "").toLowerCase(), b])
-    );
-}
+function collectUsedBeaconNumbers(exceptMac = null) {
+    const used = new Set();
 
-function getNextStableBeaconLabel() {
-    const usedNumbers = new Set();
-
-    Object.values(state.beaconDraft || {}).forEach(draft => {
-        const label = String(draft?.label || "");
+    Object.entries(state.beaconDraft || {}).forEach(([mac, draft]) => {
+        if (exceptMac && mac === exceptMac) return;
+        const label = String(draft?.label || "").trim();
         const match = label.match(/^Beacon\s+(\d+)$/i);
-        if (match) usedNumbers.add(Number(match[1]));
+        if (match) used.add(Number(match[1]));
     });
 
     state.BEACON_POS.forEach(beacon => {
-        const label = String(beacon?.label || "");
+        const mac = String(beacon?.mac || "").toLowerCase();
+        if (exceptMac && mac === exceptMac) return;
+        const label = String(beacon?.label || "").trim();
         const match = label.match(/^Beacon\s+(\d+)$/i);
-        if (match) usedNumbers.add(Number(match[1]));
+        if (match) used.add(Number(match[1]));
     });
+
+    return used;
+}
+
+function getNextStableBeaconLabel(exceptMac = null) {
+    const usedNumbers = collectUsedBeaconNumbers(exceptMac);
 
     let n = 1;
     while (usedNumbers.has(n)) n += 1;
     return `Beacon ${n}`;
+}
+
+function ensureUniqueBeaconLabel(mac, preferredLabel = null) {
+    const key = String(mac || "").toLowerCase();
+    const cleanPreferred = String(preferredLabel || "").trim();
+
+    if (!cleanPreferred) {
+        return getNextStableBeaconLabel(key);
+    }
+
+    const match = cleanPreferred.match(/^Beacon\s+(\d+)$/i);
+    if (!match) {
+        return cleanPreferred;
+    }
+
+    const requestedNumber = Number(match[1]);
+    const usedNumbers = collectUsedBeaconNumbers(key);
+
+    if (!usedNumbers.has(requestedNumber)) {
+        return `Beacon ${requestedNumber}`;
+    }
+
+    return getNextStableBeaconLabel(key);
+}
+
+function getConfiguredBeaconMap() {
+    return new Map(
+        state.BEACON_POS.map(b => [String(b.mac || "").toLowerCase(), b])
+    );
 }
 
 function ensureStableDraftForMac(mac, fallbackLabel = null) {
@@ -90,12 +122,16 @@ function ensureStableDraftForMac(mac, fallbackLabel = null) {
     if (!state.beaconDraft[key]) {
         state.beaconDraft[key] = {
             mac: key,
-            label: fallbackLabel || getNextStableBeaconLabel(),
+            label: ensureUniqueBeaconLabel(key, fallbackLabel),
             x: "",
             y: ""
         };
-    } else if (!state.beaconDraft[key].label) {
-        state.beaconDraft[key].label = fallbackLabel || getNextStableBeaconLabel();
+    } else {
+        const currentLabel = String(state.beaconDraft[key].label || "").trim();
+        state.beaconDraft[key].label = ensureUniqueBeaconLabel(
+            key,
+            currentLabel || fallbackLabel
+        );
     }
 
     return state.beaconDraft[key];
@@ -112,10 +148,10 @@ export function renderLiveBeaconList() {
 
     list.innerHTML = state.LIVE_BEACONS.map(b => {
         const mac = String(b.mac || "").toLowerCase();
-        const draft = ensureStableDraftForMac(mac, b.label || null);
+        const draft = ensureStableDraftForMac(mac, b.label || "Unnamed Beacon");
         return `
             <div class="live-beacon-item">
-              <div><strong>${draft.label}</strong></div>
+              <div><strong>${draft.label || "Unnamed Beacon"}</strong></div>
               <div style="color:var(--dim);font-size:.58rem">${mac}</div>
               <div style="color:var(--dim)">Last seen: ${b.lastSeenAt ? new Date(b.lastSeenAt).toLocaleTimeString() : '—'} | RSSI: ${b.sampleRssi || '—'}</div>
             </div>
@@ -137,14 +173,14 @@ export function renderLiveBeaconSidebar() {
     container.innerHTML = state.LIVE_BEACONS.map((b) => {
         const mac = String(b.mac || "").toLowerCase();
         const active = state.selectedBeaconMac === mac ? "active" : "";
-        const draft = ensureStableDraftForMac(mac, b.label || null);
+        const draft = ensureStableDraftForMac(mac, b.label || "Unnamed Beacon");
         const posText = draft && draft.x !== "" && draft.y !== ""
             ? `x: ${draft.x} | y: ${draft.y}`
             : "Not placed";
 
         return `
             <div class="beacon-sidebar-card ${active}" onclick="selectBeacon('${mac}')">
-                <div class="beacon-sidebar-name">${draft.label}</div>
+                <div class="beacon-sidebar-name">${draft.label || "Unnamed Beacon"}</div>
                 <div class="beacon-sidebar-mac">${mac}</div>
                 <div class="beacon-sidebar-meta">
                     ${posText}<br>
@@ -169,7 +205,7 @@ export function captureBeaconDraftFromForm() {
 
         draft[mac] = {
             mac,
-            label: String(labelInput.value || "").trim() || ensureStableDraftForMac(mac)?.label || getNextStableBeaconLabel(),
+            label: String(labelInput.value || "").trim() || "Unnamed Beacon",
             x: xInput.value,
             y: yInput.value
         };
@@ -180,22 +216,45 @@ export function captureBeaconDraftFromForm() {
 
 export function initializeBeaconDraft() {
     const configured = getConfiguredBeaconMap();
-    const nextDraft = { ...state.beaconDraft };
+    const nextDraft = {};
 
     state.LIVE_BEACONS.forEach((beacon) => {
         const mac = String(beacon.mac || "").toLowerCase();
         const existing = configured.get(mac);
-        const previous = nextDraft[mac];
+        const previous = state.beaconDraft?.[mac];
 
         nextDraft[mac] = {
             mac,
-            label: previous?.label || beacon.label || existing?.label || getNextStableBeaconLabel(),
+            label:
+                previous?.label ||
+                beacon.label ||
+                existing?.label ||
+                "Unnamed Beacon",
             x: previous?.x ?? existing?.x ?? "",
             y: previous?.y ?? existing?.y ?? ""
         };
     });
 
     state.beaconDraft = nextDraft;
+}
+
+export function normalizeAllBeaconLabels() {
+    const seen = new Map();
+
+    Object.keys(state.beaconDraft || {}).forEach(mac => {
+        const draft = state.beaconDraft[mac];
+        const cleanLabel = ensureUniqueBeaconLabel(mac, draft?.label || "");
+        draft.label = cleanLabel;
+        seen.set(mac, cleanLabel);
+    });
+
+    state.BEACON_POS = state.BEACON_POS.map(beacon => {
+        const mac = String(beacon.mac || "").toLowerCase();
+        return {
+            ...beacon,
+            label: seen.get(mac) || ensureUniqueBeaconLabel(mac, beacon.label || "")
+        };
+    });
 }
 
 export function syncBeaconDraftPosition(mac, x, y) {
@@ -287,6 +346,7 @@ export function autofillBeaconPositionsFromPolygon() {
         }
     });
 
+    normalizeAllBeaconLabels();
     buildBeaconFields();
     renderLiveBeaconSidebar();
     updateSelectedBeaconPanel();
@@ -307,19 +367,19 @@ export function buildBeaconFields() {
 
     state.LIVE_BEACONS.forEach((beacon, i) => {
         const mac = String(beacon.mac || "").toLowerCase();
-        const draft = ensureStableDraftForMac(mac, beacon.label || null);
+        const draft = ensureStableDraftForMac(mac, beacon.label || "Unnamed Beacon");
 
         const row = document.createElement("div");
         row.className = "beacon-row";
         row.innerHTML = `
-            <div class="beacon-row-label">${draft.label}</div>
+            <div class="beacon-row-label">${draft.label || "Unnamed Beacon"}</div>
             <div class="dim-field" style="flex:1.4">
                 <div class="dim-label">MAC</div>
                 <input class="dim-input" id="bmac-${i}" type="text" value="${mac}" readonly>
             </div>
             <div class="dim-field">
                 <div class="dim-label">LABEL</div>
-                <input class="dim-input" id="blabel-${i}" type="text" value="${draft.label ?? ""}">
+                <input class="dim-input" id="blabel-${i}" type="text" value="${draft.label ?? ""}" placeholder="Enter beacon name">
             </div>
             <div class="dim-field">
                 <div class="dim-label">X</div>
@@ -331,13 +391,47 @@ export function buildBeaconFields() {
                 <input class="dim-input" id="by-${i}" type="text" value="${draft.y ?? ""}" readonly>
             </div>
         `;
+
         container.appendChild(row);
+
+        const labelInput = row.querySelector(`#blabel-${i}`);
+        const rowLabel = row.querySelector(".beacon-row-label");
+
+        labelInput.addEventListener("input", () => {
+            const newLabel = labelInput.value.trim() || "Unnamed Beacon";
+
+            if (!state.beaconDraft[mac]) {
+                state.beaconDraft[mac] = {
+                    mac,
+                    label: newLabel,
+                    x: "",
+                    y: ""
+                };
+            } else {
+                state.beaconDraft[mac].label = newLabel;
+            }
+
+            rowLabel.textContent = newLabel;
+
+            const beaconIdx = state.BEACON_POS.findIndex(b => String(b.mac || "").toLowerCase() === mac);
+            if (beaconIdx >= 0) {
+                state.BEACON_POS[beaconIdx].label = newLabel;
+            }
+
+            if (state.selectedBeaconMac === mac) {
+                updateSelectedBeaconPanel();
+            }
+
+            renderLiveBeaconSidebar();
+            drawScene();
+        });
     });
 }
 
 export function openSetupModal() {
-    renderLiveBeaconList();
     initializeBeaconDraft();
+    normalizeAllBeaconLabels();
+    renderLiveBeaconList();
     buildBeaconFields();
     document.getElementById("cancel-btn").style.display = "";
     document.getElementById("setup-modal").classList.add("open");
@@ -349,6 +443,7 @@ export function closeSetupModal() {
 
 export async function applyConfig() {
     captureBeaconDraftFromForm();
+    normalizeAllBeaconLabels();
 
     const polygon = state.ROOM.polygon || [];
     if (polygon.length < 3) {
@@ -401,6 +496,7 @@ export async function applyConfig() {
             }))
             : state.BEACON_POS;
 
+        normalizeAllBeaconLabels();
         updateRoomBadge();
         centreCamera();
         drawScene();
@@ -536,7 +632,6 @@ export function updateSegmentEditorPanel() {
         return;
     }
 
-    // Live segment being drawn
     if (hover && pts.length >= 1) {
         const a = pts[pts.length - 1];
         const b = hover;
@@ -558,6 +653,31 @@ export function updateSegmentEditorPanel() {
                 <button class="tool-btn" onclick="applyCurrentSegmentLength()">APPLY LENGTH</button>
             </div>
         `;
+
+        requestAnimationFrame(() => {
+            const input = document.getElementById("segment-length-input");
+            if (!input) return;
+
+            const active = document.activeElement;
+            const activeTag = active?.tagName?.toLowerCase();
+            const alreadyTyping =
+                activeTag === "input" ||
+                activeTag === "textarea" ||
+                active?.isContentEditable;
+
+            if (!alreadyTyping || active?.id === "segment-length-input") {
+                input.focus();
+                input.select();
+            }
+
+            input.addEventListener("keydown", (event) => {
+                if (event.key === "Enter") {
+                    event.preventDefault();
+                    applyCurrentSegmentLength();
+                }
+            });
+        });
+
         return;
     }
 

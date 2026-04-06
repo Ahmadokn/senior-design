@@ -1,5 +1,11 @@
 export const POLL_MS = 5000;
-export const GRID_SNAP = 0.5;
+
+// Minor snap step: 5 cm
+export const GRID_SNAP = 0.05;
+
+// Visual grid settings
+export const GRID_MAJOR_STEP = 1.0;   // 1 meter
+export const GRID_MINOR_STEP = 0.05;  // 5 cm
 
 export const state = {
     ROOM: { polygon: [] },
