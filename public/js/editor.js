@@ -1,6 +1,11 @@
 import { state, camera, GRID_SNAP } from "./state.js";
 import { getCanvas, toWorld, drawScene } from "./canvas.js";
-import { syncBeaconDraftPosition, updateEditorModeUI } from "./ui.js";
+import {
+    syncBeaconDraftPosition,
+    updateEditorModeUI,
+    updateSegmentEditorPanel,
+    autofillBeaconPositionsFromPolygon
+} from "./ui.js";
 import { clampPointToPolygon } from "./geometry.js";
 
 function snap(value) {
@@ -31,6 +36,12 @@ function distance2(a, b) {
     return dx * dx + dy * dy;
 }
 
+function isTypingTarget(target) {
+    if (!target) return false;
+    const tag = target.tagName?.toLowerCase();
+    return tag === "input" || tag === "textarea" || target.isContentEditable;
+}
+
 function findBeaconUnderPointer(evt, canvas) {
     const mouse = getMousePos(evt, canvas);
     const thresholdPx = 14;
@@ -55,21 +66,38 @@ function findBeaconUnderPointer(evt, canvas) {
     return found;
 }
 
+function undoLastDraftPoint() {
+    if (state.editor.roomDraftPoints.length > 0) {
+        state.editor.roomDraftPoints.pop();
+        state.editor.selectedDraftSegmentIndex =
+            state.editor.roomDraftPoints.length >= 2 ? state.editor.roomDraftPoints.length - 2 : null;
+        state.editor.hoverWorldPoint = null;
+        updateSegmentEditorPanel();
+        drawScene();
+    }
+}
+
 export function setEditorMode(mode) {
     state.editor.mode = mode;
 
     if (mode !== "drawRoom") {
         state.editor.roomDraftPoints = [];
+        state.editor.selectedDraftSegmentIndex = null;
+        state.editor.hoverWorldPoint = null;
     }
 
     state.editor.draggingBeaconMac = null;
     updateEditorModeUI();
+    updateSegmentEditorPanel();
     drawScene();
 }
 
 export function clearRoomPolygon() {
     state.ROOM.polygon = [];
     state.editor.roomDraftPoints = [];
+    state.editor.selectedDraftSegmentIndex = null;
+    state.editor.hoverWorldPoint = null;
+    updateSegmentEditorPanel();
     drawScene();
 }
 
@@ -79,13 +107,35 @@ export function finishRoomPolygon() {
 
     state.ROOM.polygon = [...pts];
     state.editor.roomDraftPoints = [];
+    state.editor.selectedDraftSegmentIndex = null;
+    state.editor.hoverWorldPoint = null;
     state.editor.mode = "view";
+
+    autofillBeaconPositionsFromPolygon();
+
     updateEditorModeUI();
+    updateSegmentEditorPanel();
     drawScene();
 }
 
 export function initEditorInteractions() {
     const { canvas } = getCanvas();
+
+    canvas.addEventListener("contextmenu", evt => {
+        if (state.editor.mode === "drawRoom") {
+            evt.preventDefault();
+            undoLastDraftPoint();
+        }
+    });
+
+    canvas.addEventListener("dblclick", evt => {
+        if (state.editor.mode === "drawRoom") {
+            evt.preventDefault();
+            if ((state.editor.roomDraftPoints || []).length >= 3) {
+                finishRoomPolygon();
+            }
+        }
+    });
 
     canvas.addEventListener("mousedown", evt => {
         if (state.editor.mode === "editBeacons") {
@@ -127,6 +177,15 @@ export function initEditorInteractions() {
             return;
         }
 
+        if (state.editor.mode === "drawRoom" && !state.editor.isPanning) {
+            const pts = state.editor.roomDraftPoints || [];
+            if (pts.length >= 1) {
+                state.editor.hoverWorldPoint = getSnappedWorld(evt, canvas);
+                updateSegmentEditorPanel();
+                drawScene();
+            }
+        }
+
         if (!state.editor.isPanning) return;
 
         const dx = evt.clientX - camera.dragStart.x;
@@ -147,11 +206,30 @@ export function initEditorInteractions() {
         canvas.style.cursor = state.editor.mode === "editBeacons" ? "crosshair" : "grab";
     });
 
+    window.addEventListener("keydown", evt => {
+        if (isTypingTarget(document.activeElement)) return;
+        if (state.editor.mode !== "drawRoom") return;
+
+        if (evt.key === "Backspace" || evt.key === "Delete") {
+            evt.preventDefault();
+            undoLastDraftPoint();
+        }
+
+        if (evt.key === "Escape") {
+            evt.preventDefault();
+            state.editor.roomDraftPoints = [];
+            state.editor.selectedDraftSegmentIndex = null;
+            state.editor.hoverWorldPoint = null;
+            updateSegmentEditorPanel();
+            drawScene();
+        }
+    });
+
     canvas.addEventListener("click", evt => {
         if (state.editor.mode !== "drawRoom") return;
         if (state.editor.panMoved) return;
 
-        const point = getSnappedWorld(evt, canvas);
+        const point = state.editor.hoverWorldPoint || getSnappedWorld(evt, canvas);
         const pts = state.editor.roomDraftPoints;
 
         if (pts.length >= 3 && distance2(point, pts[0]) <= 0.35 * 0.35) {
@@ -160,6 +238,10 @@ export function initEditorInteractions() {
         }
 
         pts.push(point);
+        state.editor.selectedDraftSegmentIndex = pts.length >= 2 ? pts.length - 2 : null;
+        state.editor.hoverWorldPoint = null;
+
+        updateSegmentEditorPanel();
         drawScene();
     });
 

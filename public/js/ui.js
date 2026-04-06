@@ -1,7 +1,12 @@
 import { state } from "./state.js";
 import { saveConfig } from "./api.js";
 import { centreCamera, drawScene } from "./canvas.js";
-import { clampPointToPolygon, getPolygonBounds } from "./geometry.js";
+import {
+    clampPointToPolygon,
+    getPolygonBounds,
+    normalizePolygon,
+    projectPointToPolygonBoundary
+} from "./geometry.js";
 
 export function isSetupModalOpen() {
     return document.getElementById("setup-modal").classList.contains("open");
@@ -34,7 +39,7 @@ export function updateEditorModeUI() {
         },
         drawRoom: {
             label: "MODE: DRAW ROOM",
-            help: "DRAW ROOM: click snapped grid points to add room vertices. Click near the first point or press FINISH ROOM to close."
+            help: "DRAW ROOM: click to add points, right-click/Delete to undo, double-click to finish, Esc to cancel."
         },
         editBeacons: {
             label: "MODE: PLACE BEACONS",
@@ -107,7 +112,7 @@ export function renderLiveBeaconList() {
 
     list.innerHTML = state.LIVE_BEACONS.map(b => {
         const mac = String(b.mac || "").toLowerCase();
-        const draft = ensureStableDraftForMac(mac);
+        const draft = ensureStableDraftForMac(mac, b.label || null);
         return `
             <div class="live-beacon-item">
               <div><strong>${draft.label}</strong></div>
@@ -132,7 +137,7 @@ export function renderLiveBeaconSidebar() {
     container.innerHTML = state.LIVE_BEACONS.map((b) => {
         const mac = String(b.mac || "").toLowerCase();
         const active = state.selectedBeaconMac === mac ? "active" : "";
-        const draft = ensureStableDraftForMac(mac);
+        const draft = ensureStableDraftForMac(mac, b.label || null);
         const posText = draft && draft.x !== "" && draft.y !== ""
             ? `x: ${draft.x} | y: ${draft.y}`
             : "Not placed";
@@ -155,6 +160,7 @@ export function captureBeaconDraftFromForm() {
 
     state.LIVE_BEACONS.forEach((beacon, i) => {
         const mac = String(beacon.mac || "").toLowerCase();
+
         const labelInput = document.getElementById(`blabel-${i}`);
         const xInput = document.getElementById(`bx-${i}`);
         const yInput = document.getElementById(`by-${i}`);
@@ -183,7 +189,7 @@ export function initializeBeaconDraft() {
 
         nextDraft[mac] = {
             mac,
-            label: previous?.label || existing?.label || getNextStableBeaconLabel(),
+            label: previous?.label || beacon.label || existing?.label || getNextStableBeaconLabel(),
             x: previous?.x ?? existing?.x ?? "",
             y: previous?.y ?? existing?.y ?? ""
         };
@@ -236,6 +242,56 @@ export function syncBeaconDraftPosition(mac, x, y) {
     renderLiveBeaconSidebar();
 }
 
+export function autofillBeaconPositionsFromPolygon() {
+    const polygon = normalizePolygon(state.ROOM.polygon || []);
+    if (polygon.length < 2) return;
+
+    const configured = getConfiguredBeaconMap();
+    const sourceList = state.LIVE_BEACONS.length ? state.LIVE_BEACONS : state.BEACON_POS;
+
+    sourceList.forEach((beacon, index) => {
+        const mac = String(beacon.mac || "").toLowerCase();
+        const draft = ensureStableDraftForMac(mac, beacon.label || null);
+        const existing = configured.get(mac);
+
+        let sourcePoint = null;
+
+        const draftX = Number(draft.x);
+        const draftY = Number(draft.y);
+
+        if (Number.isFinite(draftX) && Number.isFinite(draftY)) {
+            sourcePoint = { x: draftX, y: draftY };
+        } else if (existing && Number.isFinite(existing.x) && Number.isFinite(existing.y)) {
+            sourcePoint = { x: Number(existing.x), y: Number(existing.y) };
+        } else {
+            sourcePoint = polygon[index % polygon.length];
+        }
+
+        const snapped = projectPointToPolygonBoundary(sourcePoint, polygon);
+
+        draft.x = Number(snapped.x.toFixed(2));
+        draft.y = Number(snapped.y.toFixed(2));
+
+        const existingIdx = state.BEACON_POS.findIndex(b => String(b.mac || "").toLowerCase() === mac);
+        if (existingIdx >= 0) {
+            state.BEACON_POS[existingIdx].x = draft.x;
+            state.BEACON_POS[existingIdx].y = draft.y;
+            state.BEACON_POS[existingIdx].label = draft.label || mac;
+        } else {
+            state.BEACON_POS.push({
+                mac,
+                label: draft.label || mac,
+                x: draft.x,
+                y: draft.y
+            });
+        }
+    });
+
+    buildBeaconFields();
+    renderLiveBeaconSidebar();
+    updateSelectedBeaconPanel();
+}
+
 export function buildBeaconFields() {
     const container = document.getElementById("beacon-fields");
     container.innerHTML = "";
@@ -251,7 +307,7 @@ export function buildBeaconFields() {
 
     state.LIVE_BEACONS.forEach((beacon, i) => {
         const mac = String(beacon.mac || "").toLowerCase();
-        const draft = ensureStableDraftForMac(mac);
+        const draft = ensureStableDraftForMac(mac, beacon.label || null);
 
         const row = document.createElement("div");
         row.className = "beacon-row";
@@ -309,14 +365,14 @@ export async function applyConfig() {
 
     for (const beacon of state.LIVE_BEACONS) {
         const mac = String(beacon.mac || "").toLowerCase();
-        const draft = ensureStableDraftForMac(mac);
+        const draft = ensureStableDraftForMac(mac, beacon.label || null);
 
         const label = String(draft.label || "").trim() || mac;
         const x = parseFloat(draft.x);
         const y = parseFloat(draft.y);
 
         if (isNaN(x) || isNaN(y)) {
-            alert(`Please place ${label} on the canvas or enter its X/Y below.`);
+            alert(`Please place ${label} on the canvas or let it auto-fill to the wall.`);
             return;
         }
 
@@ -326,7 +382,7 @@ export async function applyConfig() {
     try {
         const saved = await saveConfig({
             room: {
-                polygon: polygon
+                polygon
             },
             beacons,
             algorithm: "trilateration"
@@ -460,5 +516,95 @@ export function applySelectedBeaconPosition() {
     }
 
     syncBeaconDraftPosition(state.selectedBeaconMac, x, y);
+    drawScene();
+}
+
+export function updateSegmentEditorPanel() {
+    const el = document.getElementById("segment-editor-content");
+    if (!el) return;
+
+    if (state.editor.mode !== "drawRoom") {
+        el.innerHTML = '<div style="color:var(--dim);font-size:.6rem">Switch to DRAW ROOM mode</div>';
+        return;
+    }
+
+    const pts = state.editor.roomDraftPoints || [];
+    const hover = state.editor.hoverWorldPoint;
+
+    if (pts.length === 0) {
+        el.innerHTML = '<div style="color:var(--dim);font-size:.6rem">Click the first point to start drawing</div>';
+        return;
+    }
+
+    // Live segment being drawn
+    if (hover && pts.length >= 1) {
+        const a = pts[pts.length - 1];
+        const b = hover;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+
+        el.innerHTML = `
+            <div class="info-row"><span class="info-label">START</span><span class="info-val">(${a.x.toFixed(2)}, ${a.y.toFixed(2)})</span></div>
+            <div class="info-row"><span class="info-label">PREVIEW</span><span class="info-val">(${b.x.toFixed(2)}, ${b.y.toFixed(2)})</span></div>
+            <div class="info-row"><span class="info-label">CURRENT</span><span class="info-val">${length.toFixed(2)} m</span></div>
+
+            <div style="margin-top:8px">
+                <div class="dim-label">DESIRED LENGTH (metres)</div>
+                <input class="segment-editor-input" id="segment-length-input" type="number" step="0.1" min="0.1" value="${Math.max(length, 0.5).toFixed(2)}">
+            </div>
+
+            <div class="beacon-editor-actions" style="margin-top:10px">
+                <button class="tool-btn" onclick="applyCurrentSegmentLength()">APPLY LENGTH</button>
+            </div>
+        `;
+        return;
+    }
+
+    el.innerHTML = '<div style="color:var(--dim);font-size:.6rem">Move the mouse to preview the next wall segment</div>';
+}
+
+export function applyCurrentSegmentLength() {
+    const pts = state.editor.roomDraftPoints || [];
+    const hover = state.editor.hoverWorldPoint;
+
+    if (state.editor.mode !== "drawRoom" || pts.length < 1 || !hover) {
+        alert("Start drawing a segment first.");
+        return;
+    }
+
+    const input = document.getElementById("segment-length-input");
+    if (!input) return;
+
+    const desiredLength = parseFloat(input.value);
+    if (!Number.isFinite(desiredLength) || desiredLength <= 0) {
+        alert("Enter a valid segment length.");
+        return;
+    }
+
+    const a = pts[pts.length - 1];
+    const b = hover;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const currentLength = Math.sqrt(dx * dx + dy * dy);
+
+    if (currentLength <= 1e-9) {
+        alert("Move the cursor to define a direction first.");
+        return;
+    }
+
+    const ux = dx / currentLength;
+    const uy = dy / currentLength;
+
+    const newPoint = {
+        x: Number((a.x + ux * desiredLength).toFixed(2)),
+        y: Number((a.y + uy * desiredLength).toFixed(2))
+    };
+
+    pts.push(newPoint);
+    state.editor.selectedDraftSegmentIndex = pts.length - 2;
+    state.editor.hoverWorldPoint = null;
+
+    updateSegmentEditorPanel();
     drawScene();
 }

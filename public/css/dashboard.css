@@ -743,3 +743,32 @@ canvas {
 .btn-apply:hover {
     background: rgba(0, 229, 255, .08);
 }
+
+.segment-editor-panel {
+    position: absolute;
+    left: 20px;
+    bottom: 170px;
+    width: 320px;
+    z-index: 5;
+    background: var(--panel-bg);
+    border: 1px solid var(--teal);
+    padding: 14px;
+    font-size: .65rem;
+    line-height: 2;
+    backdrop-filter: blur(8px);
+}
+
+.segment-editor-input {
+    width: 100%;
+    background: #040d12;
+    border: 1px solid var(--teal);
+    color: var(--accent);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: .78rem;
+    padding: 7px 9px;
+    outline: none;
+}
+
+.segment-editor-input:focus {
+    border-color: var(--cyan);
+}

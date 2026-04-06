@@ -67,6 +67,7 @@ export function closestPointOnSegment(point, a, b) {
 export function closestPointOnPolygon(point, polygon) {
     const pts = normalizePolygon(polygon);
     if (pts.length === 0) return { x: point.x, y: point.y };
+    if (pts.length === 1) return { x: pts[0].x, y: pts[0].y };
 
     let bestPoint = null;
     let bestDistSq = Infinity;
@@ -75,6 +76,7 @@ export function closestPointOnPolygon(point, polygon) {
         const a = pts[i];
         const b = pts[(i + 1) % pts.length];
         const candidate = closestPointOnSegment(point, a, b);
+
         const dx = point.x - candidate.x;
         const dy = point.y - candidate.y;
         const d2 = dx * dx + dy * dy;
@@ -91,8 +93,14 @@ export function closestPointOnPolygon(point, polygon) {
 export function clampPointToPolygon(point, polygon) {
     const pts = normalizePolygon(polygon);
     if (pts.length < 3) return point;
-
     if (pointInPolygon(point, pts)) return point;
+    return closestPointOnPolygon(point, pts);
+}
+
+// Always project to boundary, even if point is already inside.
+export function projectPointToPolygonBoundary(point, polygon) {
+    const pts = normalizePolygon(polygon);
+    if (pts.length < 2) return point;
     return closestPointOnPolygon(point, pts);
 }
 
@@ -119,8 +127,8 @@ export function getPolygonBounds(polygon) {
         minY,
         maxX,
         maxY,
-        width: maxX - minX || 1,
-        height: maxY - minY || 1
+        width: Math.max(maxX - minX, 1),
+        height: Math.max(maxY - minY, 1)
     };
 }
 
@@ -130,6 +138,7 @@ export function getPolygonCentroid(polygon) {
 
     let x = 0;
     let y = 0;
+
     for (const p of pts) {
         x += p.x;
         y += p.y;

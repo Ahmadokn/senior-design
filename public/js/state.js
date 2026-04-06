@@ -18,7 +18,8 @@ export const state = {
         isPanning: false,
         panMoved: false,
         draggingBeaconMac: null,
-        selectedDraftSegmentIndex: null
+        selectedDraftSegmentIndex: null,
+        hoverWorldPoint: null
     }
 };
 

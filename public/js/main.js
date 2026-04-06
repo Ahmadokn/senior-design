@@ -18,7 +18,9 @@ import {
     initializeBeaconDraft,
     updateEditorModeUI,
     updateSelectedBeaconPanel,
-    applySelectedBeaconPosition
+    applySelectedBeaconPosition,
+    updateSegmentEditorPanel,
+    applyCurrentSegmentLength
 } from "./ui.js";
 
 window.openSetupModal = openSetupModal;
@@ -30,6 +32,7 @@ window.setEditorMode = setEditorMode;
 window.clearRoomPolygon = clearRoomPolygon;
 window.finishRoomPolygon = finishRoomPolygon;
 window.applySelectedBeaconPosition = applySelectedBeaconPosition;
+window.applyCurrentSegmentLength = applyCurrentSegmentLength;
 
 function getLiveBeaconSignature(beacons) {
     return beacons
@@ -140,6 +143,7 @@ async function init() {
     updateRoomBadge();
     updateEditorModeUI();
     updateSelectedBeaconPanel();
+    updateSegmentEditorPanel();
     drawScene();
     await refreshPositions();
     animateBar();

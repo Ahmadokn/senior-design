@@ -110,13 +110,13 @@ function buildMeasurementChains(points, close = true) {
 
         for (let i = 2; i < points.length; i++) {
             const curr = points[i];
-
-            if (!areCollinearAndSameDirection(chainStart, prev, curr) &&
-                !areCollinearAndSameDirection(points[i - 2], prev, curr)) {
+            if (
+                !areCollinearAndSameDirection(chainStart, prev, curr) &&
+                !areCollinearAndSameDirection(points[i - 2], prev, curr)
+            ) {
                 chains.push({ start: chainStart, end: prev });
                 chainStart = prev;
             }
-
             prev = curr;
         }
 
@@ -124,9 +124,6 @@ function buildMeasurementChains(points, close = true) {
         return chains;
     }
 
-    // Closed polygon:
-    // first build chains over the open sequence, then add closing segment,
-    // then merge first/last chain if they are actually one straight wall.
     const openChains = buildMeasurementChains(points, false);
 
     const lastPoint = points[points.length - 1];
@@ -156,7 +153,7 @@ function buildMeasurementChains(points, close = true) {
     return openChains;
 }
 
-function drawSegmentMeasurement(a, b) {
+function drawSegmentMeasurement(a, b, color = "#ffd54f") {
     const mid = midpoint(a, b);
     const { px, py } = toScreen(mid.x, mid.y);
     const len = distanceMeters(a, b);
@@ -184,7 +181,7 @@ function drawSegmentMeasurement(a, b) {
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle = "#ffd54f";
+    ctx.fillStyle = color;
     ctx.fillText(label, px, py);
     ctx.restore();
 }
@@ -283,6 +280,39 @@ function drawPolygonSummary(polygon) {
     ctx.restore();
 }
 
+function drawPreviewSegment() {
+    if (state.editor.mode !== "drawRoom") return;
+
+    const pts = state.editor.roomDraftPoints || [];
+    const hover = state.editor.hoverWorldPoint;
+
+    if (pts.length < 1 || !hover) return;
+
+    const start = pts[pts.length - 1];
+    const end = hover;
+
+    const a = toScreen(start.x, start.y);
+    const b = toScreen(end.x, end.y);
+
+    ctx.save();
+    ctx.setLineDash([8, 6]);
+    ctx.strokeStyle = "#6ee7ff";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(a.px, a.py);
+    ctx.lineTo(b.px, b.py);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.beginPath();
+    ctx.arc(b.px, b.py, 4, 0, Math.PI * 2);
+    ctx.fillStyle = "#6ee7ff";
+    ctx.fill();
+    ctx.restore();
+
+    drawSegmentMeasurement(start, end, "#6ee7ff");
+}
+
 export function drawScene() {
     const W = canvas.width;
     const H = canvas.height;
@@ -359,7 +389,6 @@ export function drawScene() {
             showVertices: true,
             showMeasurements: true
         });
-
         drawPolygonSummary(savedPolygon);
     }
 
@@ -374,6 +403,8 @@ export function drawScene() {
             showMeasurements: true
         });
     }
+
+    drawPreviewSegment();
 
     state.BEACON_POS.forEach(b => {
         const { px, py } = toScreen(b.x, b.y);
